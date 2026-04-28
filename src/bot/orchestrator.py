@@ -328,6 +328,9 @@ class MessageOrchestrator:
             ("verbose", self.agentic_verbose),
             ("repo", self.agentic_repo),
             ("restart", command.restart_command),
+            ("haiku", command.switch_model_command),
+            ("sonnet", command.switch_model_command),
+            ("opus", command.switch_model_command),
         ]
         if self.settings.enable_project_threads:
             handlers.append(("sync_threads", command.sync_threads))
@@ -417,6 +420,9 @@ class MessageOrchestrator:
             ("actions", command.quick_actions),
             ("git", command.git_command),
             ("restart", command.restart_command),
+            ("haiku", command.switch_model_command),
+            ("sonnet", command.switch_model_command),
+            ("opus", command.switch_model_command),
         ]
         if self.settings.enable_project_threads:
             handlers.append(("sync_threads", command.sync_threads))
@@ -461,6 +467,9 @@ class MessageOrchestrator:
                 BotCommand("verbose", "Set output verbosity (0/1/2)"),
                 BotCommand("repo", "List repos / switch workspace"),
                 BotCommand("restart", "Restart the bot"),
+                BotCommand("haiku", "Switch to Haiku (fastest)"),
+                BotCommand("sonnet", "Switch to Sonnet (default)"),
+                BotCommand("opus", "Switch to Opus (most capable)"),
             ]
             if self.settings.enable_project_threads:
                 commands.append(BotCommand("sync_threads", "Sync project topics"))
@@ -481,6 +490,9 @@ class MessageOrchestrator:
                 BotCommand("actions", "Show quick actions"),
                 BotCommand("git", "Git repository commands"),
                 BotCommand("restart", "Restart the bot"),
+                BotCommand("haiku", "Switch to Haiku (fastest)"),
+                BotCommand("sonnet", "Switch to Sonnet (default)"),
+                BotCommand("opus", "Switch to Opus (most capable)"),
             ]
             if self.settings.enable_project_threads:
                 commands.append(BotCommand("sync_threads", "Sync project topics"))
@@ -576,8 +588,24 @@ class MessageOrchestrator:
             except Exception:
                 pass
 
+        model_raw = self.settings.claude_model or "claude-sonnet-4-6"
+        model_short = (
+            model_raw.replace("claude-", "")
+                      .replace("-20251001", "")
+                      .replace("-4-7", " 4.7")
+                      .replace("-4-6", " 4.6")
+                      .replace("-4-5", " 4.5")
+        )
+
+        ctx_str = ""
+        ctx = context.user_data.get("context_usage")
+        if ctx:
+            pct = ctx.get("percentage", 0)
+            total = ctx.get("totalTokens", 0)
+            ctx_str = f" · Context: {total:,} tok ({pct:.0f}%)"
+
         await update.message.reply_text(
-            f"📂 {dir_display} · Session: {session_status}{cost_str}"
+            f"📂 {dir_display} · Session: {session_status}{cost_str}{ctx_str} · 🤖 {model_short}"
         )
 
     def _get_verbose_level(self, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1021,6 +1049,7 @@ class MessageOrchestrator:
                 context.user_data["force_new_session"] = False
 
             context.user_data["claude_session_id"] = claude_response.session_id
+            context.user_data["context_usage"] = claude_response.context_usage
 
             # Track directory changes
             from .handlers.message import _update_working_directory_from_claude_response
@@ -1270,6 +1299,7 @@ class MessageOrchestrator:
                 context.user_data["force_new_session"] = False
 
             context.user_data["claude_session_id"] = claude_response.session_id
+            context.user_data["context_usage"] = claude_response.context_usage
 
             from .handlers.message import _update_working_directory_from_claude_response
 

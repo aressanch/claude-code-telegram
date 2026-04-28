@@ -59,6 +59,7 @@ class ClaudeResponse:
     error_type: Optional[str] = None
     tools_used: List[Dict[str, Any]] = field(default_factory=list)
     interrupted: bool = False
+    context_usage: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -312,8 +313,8 @@ class ClaudeSDKManager:
             # When DISABLE_TOOL_VALIDATION=true, pass None for allowed/disallowed
             # tools so the SDK does not restrict tool usage (e.g. MCP tools).
             if self.config.disable_tool_validation:
-                sdk_allowed_tools = None
-                sdk_disallowed_tools = None
+                sdk_allowed_tools = []
+                sdk_disallowed_tools = []
             else:
                 sdk_allowed_tools = self.config.claude_allowed_tools
                 sdk_disallowed_tools = self.config.claude_disallowed_tools
@@ -365,6 +366,7 @@ class ClaudeSDKManager:
             # Collect messages via ClaudeSDKClient
             messages: List[Message] = []
             interrupted = False
+            context_usage_holder: List[Dict[str, Any]] = []
 
             async def _run_client() -> None:
                 client = ClaudeSDKClient(options)
@@ -415,6 +417,11 @@ class ClaudeSDKManager:
                         messages.append(message)
 
                         if isinstance(message, ResultMessage):
+                            try:
+                                ctx = await client.get_context_usage()
+                                context_usage_holder.append(ctx)
+                            except Exception:
+                                pass
                             break
 
                         # Handle streaming callback
@@ -605,6 +612,7 @@ class ClaudeSDKManager:
                 ),
                 tools_used=tools_used,
                 interrupted=interrupted,
+                context_usage=context_usage_holder[0] if context_usage_holder else None,
             )
 
         except asyncio.TimeoutError:

@@ -1260,6 +1260,51 @@ async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     os.kill(os.getpid(), signal.SIGTERM)
 
 
+# ---------------------------------------------------------------------------
+# Model-switching commands: /haiku  /sonnet  /opus
+# ---------------------------------------------------------------------------
+
+_MODEL_ALIASES: dict[str, str] = {
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-7",
+}
+_ENV_FILE = Path("/root/bots/claude-telegram/.env")
+
+
+async def switch_model_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /haiku, /sonnet, /opus — switch the active Claude model and restart."""
+    import asyncio
+    from dotenv import set_key
+
+    alias = update.message.text.split()[0].lstrip("/").lower()
+    model = _MODEL_ALIASES.get(alias)
+    if not model:
+        await update.message.reply_text(f"❌ Unknown model alias: {alias}")
+        return
+
+    try:
+        set_key(str(_ENV_FILE), "CLAUDE_MODEL", model)
+    except Exception as exc:
+        await update.message.reply_text(
+            f"❌ <b>Failed to update .env</b>\n\n{exc}", parse_mode="HTML"
+        )
+        return
+
+    await update.message.reply_text(
+        f"✅ <b>Switching to {alias}</b>\n\n"
+        f"<code>{model}</code>\n\n"
+        "🔄 Restarting — back in a few seconds.",
+        parse_mode="HTML",
+    )
+
+    logger.info("Model switch requested", alias=alias, model=model)
+    loop = asyncio.get_event_loop()
+    loop.call_later(1.5, os.kill, os.getpid(), signal.SIGTERM)
+
+
 def _format_file_size(size: int) -> str:
     """Format file size in human-readable format."""
     for unit in ["B", "KB", "MB", "GB"]:
