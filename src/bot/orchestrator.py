@@ -618,25 +618,26 @@ class MessageOrchestrator:
             max_tok = ctx.get("maxTokens", 0)
             ctx_line = f"{total:,} / {max_tok:,} tok ({pct:.0f}%)"
 
-        # Rate limit
+        # Rate limit (CLI doesn't include utilization, only status + reset time)
         from datetime import datetime, timezone as _tz
-        limit_lines = []
         rl = context.user_data.get("rate_limit")
         if rl:
-            util = rl.get("utilization")
             rl_type = rl.get("rate_limit_type") or "limit"
             resets = rl.get("resets_at")
             status = rl.get("status", "allowed")
             type_label = {
-                "five_hour": "5h window",
-                "seven_day": "7-day",
-                "seven_day_opus": "7-day Opus",
-                "seven_day_sonnet": "7-day Sonnet",
+                "five_hour": "5h",
+                "seven_day": "7d",
+                "seven_day_opus": "7d Opus",
+                "seven_day_sonnet": "7d Sonnet",
                 "overage": "Overage",
             }.get(rl_type, rl_type)
-            parts = [type_label]
-            if util is not None:
-                parts.append(f"{util * 100:.0f}% used")
+            status_icon = {
+                "allowed": "✅",
+                "allowed_warning": "⚠️",
+                "rejected": "🚫",
+            }.get(status, "•")
+            parts = [f"{status_icon} {type_label}"]
             if resets:
                 now = datetime.now(_tz.utc).timestamp()
                 delta = max(0, int(resets - now))
@@ -645,10 +646,12 @@ class MessageOrchestrator:
                 else:
                     parts.append(f"resets in {delta // 60}m")
             if status != "allowed":
-                parts.append(f"⚠️ {status}")
-            limit_lines.append(" · ".join(parts))
-
-        limits_block = "\n".join(f"⏱  {line}" for line in limit_lines) if limit_lines else "⏱  no usage data yet"
+                parts.append(f"<b>{status}</b>")
+            if rl.get("is_using_overage"):
+                parts.append("(on overage)")
+            limits_block = "⏱  " + " · ".join(parts)
+        else:
+            limits_block = "⏱  no limit data yet (send a message to refresh)"
 
         text = (
             f"📂 <code>{dir_display}</code>\n"

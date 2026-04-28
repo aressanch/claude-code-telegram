@@ -427,6 +427,8 @@ class ClaudeSDKManager:
                                 "resets_at": info.resets_at,
                                 "rate_limit_type": info.rate_limit_type,
                                 "utilization": info.utilization,
+                                "overage_status": info.overage_status,
+                                "is_using_overage": info.raw.get("isUsingOverage"),
                             })
 
                         if isinstance(message, ResultMessage):
