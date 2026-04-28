@@ -588,6 +588,7 @@ class MessageOrchestrator:
             except Exception:
                 pass
 
+        # Model
         model_raw = self.settings.claude_model or "claude-sonnet-4-6"
         model_short = (
             model_raw.replace("claude-", "")
@@ -595,18 +596,69 @@ class MessageOrchestrator:
                       .replace("-4-7", " 4.7")
                       .replace("-4-6", " 4.6")
                       .replace("-4-5", " 4.5")
+                      .title()
         )
 
-        ctx_str = ""
+        # Cost (already computed above)
+        current_cost = 0.0
+        rate_limiter = context.bot_data.get("rate_limiter")
+        if rate_limiter:
+            try:
+                user_status = rate_limiter.get_user_status(update.effective_user.id)
+                current_cost = user_status.get("cost_usage", {}).get("current", 0.0)
+            except Exception:
+                pass
+
+        # Context usage
+        ctx_line = "—"
         ctx = context.user_data.get("context_usage")
         if ctx:
-            pct = ctx.get("percentage", 0)
             total = ctx.get("totalTokens", 0)
-            ctx_str = f" · Context: {total:,} tok ({pct:.0f}%)"
+            pct = ctx.get("percentage", 0)
+            max_tok = ctx.get("maxTokens", 0)
+            ctx_line = f"{total:,} / {max_tok:,} tok ({pct:.0f}%)"
 
-        await update.message.reply_text(
-            f"📂 {dir_display} · Session: {session_status}{cost_str}{ctx_str} · 🤖 {model_short}"
+        # Rate limit
+        from datetime import datetime, timezone as _tz
+        limit_lines = []
+        rl = context.user_data.get("rate_limit")
+        if rl:
+            util = rl.get("utilization")
+            rl_type = rl.get("rate_limit_type") or "limit"
+            resets = rl.get("resets_at")
+            status = rl.get("status", "allowed")
+            type_label = {
+                "five_hour": "5h window",
+                "seven_day": "7-day",
+                "seven_day_opus": "7-day Opus",
+                "seven_day_sonnet": "7-day Sonnet",
+                "overage": "Overage",
+            }.get(rl_type, rl_type)
+            parts = [type_label]
+            if util is not None:
+                parts.append(f"{util * 100:.0f}% used")
+            if resets:
+                now = datetime.now(_tz.utc).timestamp()
+                delta = max(0, int(resets - now))
+                if delta >= 3600:
+                    parts.append(f"resets in {delta // 3600}h {(delta % 3600) // 60}m")
+                else:
+                    parts.append(f"resets in {delta // 60}m")
+            if status != "allowed":
+                parts.append(f"⚠️ {status}")
+            limit_lines.append(" · ".join(parts))
+
+        limits_block = "\n".join(f"⏱  {line}" for line in limit_lines) if limit_lines else "⏱  no usage data yet"
+
+        text = (
+            f"📂 <code>{dir_display}</code>\n"
+            f"🤖 <b>{model_short}</b>\n"
+            f"💬 Session: {session_status}\n"
+            f"💰 Cost: ${current_cost:.4f}\n"
+            f"🧠 Context: {ctx_line}\n"
+            f"{limits_block}"
         )
+        await update.message.reply_text(text, parse_mode="HTML")
 
     def _get_verbose_level(self, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Return effective verbose level: per-user override or global default."""
@@ -1050,6 +1102,8 @@ class MessageOrchestrator:
 
             context.user_data["claude_session_id"] = claude_response.session_id
             context.user_data["context_usage"] = claude_response.context_usage
+            if claude_response.rate_limit:
+                context.user_data["rate_limit"] = claude_response.rate_limit
 
             # Track directory changes
             from .handlers.message import _update_working_directory_from_claude_response
@@ -1300,6 +1354,8 @@ class MessageOrchestrator:
 
             context.user_data["claude_session_id"] = claude_response.session_id
             context.user_data["context_usage"] = claude_response.context_usage
+            if claude_response.rate_limit:
+                context.user_data["rate_limit"] = claude_response.rate_limit
 
             from .handlers.message import _update_working_directory_from_claude_response
 

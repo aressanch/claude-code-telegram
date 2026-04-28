@@ -19,6 +19,7 @@ from claude_agent_sdk import (
     PermissionResultAllow,
     PermissionResultDeny,
     ProcessError,
+    RateLimitEvent,
     ResultMessage,
     TextBlock,
     ThinkingBlock,
@@ -60,6 +61,7 @@ class ClaudeResponse:
     tools_used: List[Dict[str, Any]] = field(default_factory=list)
     interrupted: bool = False
     context_usage: Optional[Dict[str, Any]] = None
+    rate_limit: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -367,6 +369,7 @@ class ClaudeSDKManager:
             messages: List[Message] = []
             interrupted = False
             context_usage_holder: List[Dict[str, Any]] = []
+            rate_limit_holder: List[Dict[str, Any]] = []
 
             async def _run_client() -> None:
                 client = ClaudeSDKClient(options)
@@ -415,6 +418,16 @@ class ClaudeSDKManager:
                             continue
 
                         messages.append(message)
+
+                        # Capture latest rate-limit info as it streams
+                        if isinstance(message, RateLimitEvent):
+                            info = message.rate_limit_info
+                            rate_limit_holder.append({
+                                "status": info.status,
+                                "resets_at": info.resets_at,
+                                "rate_limit_type": info.rate_limit_type,
+                                "utilization": info.utilization,
+                            })
 
                         if isinstance(message, ResultMessage):
                             try:
@@ -613,6 +626,7 @@ class ClaudeSDKManager:
                 tools_used=tools_used,
                 interrupted=interrupted,
                 context_usage=context_usage_holder[0] if context_usage_holder else None,
+                rate_limit=rate_limit_holder[-1] if rate_limit_holder else None,
             )
 
         except asyncio.TimeoutError:
